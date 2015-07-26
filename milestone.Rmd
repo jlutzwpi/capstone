@@ -1,0 +1,115 @@
+---
+title: "Capstone Milestone Report"
+author: "Justin Lutz"
+date: "Saturday, July 25, 2015"
+output: html_document
+---
+
+##Introduction
+
+This document is an introductory exploration of data for the Data Science Capstone offered through Coursera.  The data consists of blog, news, and twitter data.  We will eventually use this data to develop text mining algorithms for text prediction.  The data can be found here: https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip.
+
+##Data Analysis
+
+We start our analysis by loading in the files and doing some basic exploration.  I unzipped the zip file outside of R and load the uncompressed files:
+
+```{r}
+#setwd("coursera courses/capstone")
+#use readlines to read in the data (variable will be vector)
+twitter.vec <- readLines(file("./en_US/en_US.twitter.txt", "rb"),
+                         encoding="UTF-8", skipNul = TRUE)
+blog.vec <- readLines(file("./en_US/en_US.blogs.txt", "rb"),
+                      encoding="UTF-8", skipNul = TRUE)
+news.vec <- readLines(file("./en_US/en_US.news.txt", "rb"), encoding="UTF-8", skipNul = TRUE)
+#this code gets the word count from each string in the vector, then sums the total
+twitter.words <- sum(vapply(strsplit(twitter.vec, "\\W+"), length, integer(1)))
+blog.words <- sum(vapply(strsplit(blog.vec, "\\W+"), length, integer(1)))
+news.words <- sum(vapply(strsplit(news.vec, "\\W+"), length, integer(1)))
+#get the number of characters for each data set
+twitter.chars <- sum(nchar(twitter.vec))
+blog.chars <- sum(nchar(blog.vec))
+news.chars <- sum(nchar(news.vec))
+#create a matrix offile size in MB, line count, char count, word count 
+#for twitter, blogs, news
+stats = matrix(c(file.info("en_US/en_US.twitter.txt")$size / 1e6,
+                 file.info("en_US/en_US.blogs.txt")$size / 1e6,
+                 file.info("en_US/en_US.news.txt")$size / 1e6,
+                 length(twitter.vec), length(blog.vec), length(news.vec),
+                 twitter.chars, blog.chars, news.chars,
+                 twitter.words, blog.words, news.words), nrow=3, ncol=4)
+colnames(stats) <- c("file size (Mb)", "line count", "char count", "word count")
+rownames(stats) <- c("twitter", "blogs", "news")
+stats
+```
+
+As the data shows, the blogs file is the largest in terms of file size, character count, and word count.  Not surprisingly, the blogs line count is significantly less than the twitter data, given that twitter users are limited to 144 characters per post, and blogs are generally are not limited in word count.
+
+Since the data sets are so large (almost 600mb combined), my next step is to take samples of the data sets and combine them into one set.  From there, I can get additional information from the data, such as word frequencies.
+
+```{r, echo=FALSE, cache=TRUE}
+#create samples of each data set
+library(caret)
+twit.bin <- createDataPartition(twitter.vec, p=0.7, list = FALSE)
+twit.train <- twitter.vec[twit.bin]
+twit.test <- twitter.vec[-twit.bin]
+blog.bin <- createDataPartition(blog.vec, p=0.7, list = FALSE)
+blog.train <- blog.vec[blog.bin]
+blog.test <- blog.vec[-blog.bin]
+news.bin <- createDataPartition(twitter.vec, p=0.7, list = FALSE)
+news.train <- news.vec[news.bin]
+news.test <- news.vec[-blog.bin]
+
+#combine training vectors into 1 set
+comb.train <- c(twit.train, blog.train, news.train)
+```
+
+First, I start out by creating training sets from the input data sets.  Then I combine them into one vector to load into the Corpus.  Once the Corpus is loaded, I do some pre-processing (see the code below) to prepare the Corpus for analysis.
+
+```{r, cache=TRUE}
+#load those into a Corpus
+library(tm)
+library(RWeka)
+#corpus
+cap.corpus <- Corpus(VectorSource(comb.train))
+#do some pre-processing (to lower case, remove punctuation, etc)
+cap.corpus <- tm_map(cap.corpus, tolower)
+cap.corpus <- tm_map(cap.corpus, removePunctuation)
+cap.corpus <- tm_map(cap.corpus, removeNumbers)
+#this function will eventually remove profanity, but it's not implemented yet
+removeProf <- function(x)
+  {
+    #will take a vector of profanity and gsub out the swears, return the corpus
+  }
+#remove common English stopwords
+cap.corpus <- tm_map(cap.corpus, removewords, stopwords('english'))
+
+#will also eventually do stemming, but won't do it yet
+
+#create tokenizer (start with bigram tokenizer)
+tokenizer = function(x) {
+  tokenizer1 = NGramTokenizer(x, Weka_control(min = 1, max = 2))
+  if (length(tokenizer1) != 0L) { return(tokenizer1)
+  } else return(WordTokenizer(x))
+}
+#create Term Document Matrix
+cap.tdm <- TermDocumentMatrix(cap.corpus, control=list(tokenize=tokenizer))
+
+#create hist of most frequent terms
+freq <- rowSums(as.matrix(cap.tdm))
+freq <- subset(freq, freq>= 20)
+qplot(names(freq), freq, main="Word Frequencies", geom="bar", xlab="Words")
+```
+
+We can also inspect the Term Document Matrix to look for patterns.
+
+```{r, cache=TRUE}
+library(wordcloud)
+inspect(cap.tdm) 
+```
+
+
+
+##Path Forward
+Going forward, I will continue with this algorithm development to develop a text mining predictive algorithm using the tm and RWeka packages in R.  My hope is that accurate prediction (>90%) can be achieved using the sample data provided.  There is still a fair amount of work that needs to be done.  I still need to implement the profanity filtering.  I will use gsub to do a regular expression find and replace of common swear words.  I also need to improve my Corpus by including stemming in my pre-processing.
+
+The final result will be a shiny app that demonstrates in real-time the prediction capability.
