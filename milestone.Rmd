@@ -18,9 +18,9 @@ We start our analysis by loading in the files and doing some basic exploration. 
 #use readlines to read in the data (variable will be vector)
 twitter.vec <- readLines(file("./en_US/en_US.twitter.txt", "rb"),
                          encoding="UTF-8", skipNul = TRUE)
-blog.vec <- readLines(file("./en_US/en_US.blogs.txt", "rb"),
+blog.vec <- readLines("./en_US/en_US.blogs.txt")
+news.vec <- readLines(file("./en_US/en_US.news.txt", "rb"), 
                       encoding="UTF-8", skipNul = TRUE)
-news.vec <- readLines(file("./en_US/en_US.news.txt", "rb"), encoding="UTF-8", skipNul = TRUE)
 #this code gets the word count from each string in the vector, then sums the total
 twitter.words <- sum(vapply(strsplit(twitter.vec, "\\W+"), length, integer(1)))
 blog.words <- sum(vapply(strsplit(blog.vec, "\\W+"), length, integer(1)))
@@ -46,18 +46,25 @@ As the data shows, the blogs file is the largest in terms of file size, characte
 
 Since the data sets are so large (almost 600mb combined), my next step is to take samples of the data sets and combine them into one set.  From there, I can get additional information from the data, such as word frequencies.
 
-```{r, echo=FALSE, cache=TRUE}
+```{r, echo=FALSE}
 #create samples of each data set
 library(caret)
-twit.bin <- createDataPartition(twitter.vec, p=0.7, list = FALSE)
+library(caTools)
+#twit.bin <- createDataPartition(twitter.vec, p=0.7, list = FALSE)
+twit.bin <- sample.split(twitter.vec, SplitRatio = 0.05)
 twit.train <- twitter.vec[twit.bin]
-twit.test <- twitter.vec[-twit.bin]
-blog.bin <- createDataPartition(blog.vec, p=0.7, list = FALSE)
+#twit.test <- twitter.vec[-twit.bin]
+#blog.bin <- createDataPartition(blog.vec, p=0.7, list = FALSE)
+blog.bin <- sample.split(blog.vec, SplitRatio = 0.05)
 blog.train <- blog.vec[blog.bin]
-blog.test <- blog.vec[-blog.bin]
-news.bin <- createDataPartition(twitter.vec, p=0.7, list = FALSE)
+#blog.test <- blog.vec[-blog.bin]
+#news.bin <- createDataPartition(twitter.vec, p=0.7, list = FALSE)
+news.bin <- sample.split(news.vec, SplitRatio = 0.05)
 news.train <- news.vec[news.bin]
-news.test <- news.vec[-blog.bin]
+#news.test <- news.vec[-blog.bin]
+
+
+
 
 #combine training vectors into 1 set
 comb.train <- c(twit.train, blog.train, news.train)
@@ -65,7 +72,7 @@ comb.train <- c(twit.train, blog.train, news.train)
 
 First, I start out by creating training sets from the input data sets.  Then I combine them into one vector to load into the Corpus.  Once the Corpus is loaded, I do some pre-processing (see the code below) to prepare the Corpus for analysis.
 
-```{r, cache=TRUE}
+```{r}
 #load those into a Corpus
 library(tm)
 library(RWeka)
@@ -81,7 +88,8 @@ removeProf <- function(x)
     #will take a vector of profanity and gsub out the swears, return the corpus
   }
 #remove common English stopwords
-cap.corpus <- tm_map(cap.corpus, removewords, stopwords('english'))
+cap.corpus <- tm_map(cap.corpus, removeWords, stopwords('english'))
+cap.corpus <- tm_map(cap.corpus, PlainTextDocument)
 
 #will also eventually do stemming, but won't do it yet
 
@@ -95,16 +103,27 @@ tokenizer = function(x) {
 cap.tdm <- TermDocumentMatrix(cap.corpus, control=list(tokenize=tokenizer))
 
 #create hist of most frequent terms
-freq <- rowSums(as.matrix(cap.tdm))
-freq <- subset(freq, freq>= 20)
-qplot(names(freq), freq, main="Word Frequencies", geom="bar", xlab="Words")
+#freq <- rowSums(as.matrix(cap.tdm))
+library(slam)
+freq <- rollup(cap.tdm, 2, na.rm=TRUE, FUN = sum)
+#freq <- subset(freq, freq$v>= 20, select=c(dimnames,v))
+library(ggplot2)
+freq.df <- data.frame(as.character(freq$dimnames$Terms), freq$v)
+colnames(freq.df) <- c("words", "sum")
+freq.df <- subset(freq.df, sum > 10000)
+freq.df <- freq.df[order(-freq.df$sum),]
+#top 20
+freq.df <- freq.df[1:20,]
+qplot(data=freq.df, words, sum, geom="bar", stat="identity", main="Word Frequencies", ylab="Frequency") + coord_flip()
+#qplot(names(freq$dimnames$Terms), freq$v>100, main="Word Frequencies", geom="bar", xlab="Words")
 ```
 
 We can also inspect the Term Document Matrix to look for patterns.
 
 ```{r, cache=TRUE}
 library(wordcloud)
-inspect(cap.tdm) 
+#cap.tdm <- removeSparseTerms(cap.tdm, 0.4)
+#inspect(cap.tdm) 
 ```
 
 
